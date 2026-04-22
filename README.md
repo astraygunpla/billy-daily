@@ -1,42 +1,48 @@
-# Discord Daily Stand-up Bot
+# Bot de Daily Assíncrona para Discord
 
-Automated daily scrum bot for Discord. At a configured time (default 9:30 AM Mon–Fri) the bot DMs every member of a specified role three stand-up questions, waits for replies, then posts a formatted summary to a ClickUp task as a comment.
+Bot automatizado de daily para Discord. No horário configurado (padrão: 09h30, seg–sex), o bot envia uma DM para cada membro de um cargo específico com três perguntas de stand-up, aguarda as respostas e publica um resumo formatado como página no ClickUp Docs.
+
+O formato da daily é baseado no método de alinhamentos assíncronos de **[Daniel Kossmann](https://www.danielkossmann.com/pt/como-fazer-alinhamentos-diarios-sem-reunioes-assincronamente/)**, adaptado para funcionar via Discord com envio automático ao ClickUp.
 
 ---
 
-## File structure
+## Estrutura de arquivos
 
 ```
 discord-standup-bot/
 ├── src/
-│   ├── index.js        Entry point
-│   ├── bot.js          Discord client + event wiring
-│   ├── standup.js      Core logic (sendDailyDMs, handleDMReply, …)
-│   ├── storage.js      JSON-file persistence
-│   ├── clickup.js      ClickUp REST API integration
-│   ├── scheduler.js    node-cron jobs
-│   ├── commands.js     Guild commands (!start-standup, !show-answers, …)
-│   └── utils.js        Date helpers, message chunking
+│   ├── index.js          Ponto de entrada
+│   ├── bot.js            Cliente Discord + registro de eventos
+│   ├── standup.js        Lógica principal (sendDailyDMs, handleDMReply, …)
+│   ├── storage.js        Persistência em JSON
+│   ├── clickup.js        Integração com a API REST do ClickUp
+│   ├── scheduler.js      Jobs com node-cron (suporta reagendamento dinâmico)
+│   ├── commands.js       Comandos do servidor (!start-standup, !show-answers, …)
+│   ├── scheduleStore.js  Persistência do horário configurado
+│   ├── formatStore.js    Persistência do formato do ClickUp
+│   └── utils.js          Utilitários de data e divisão de mensagens
 ├── data/
-│   └── standup.json    Created at runtime — answers stored here
-├── config.js           Loads env vars into BOT_CONFIG / CLICKUP_CONFIG
-├── .env.example        Template — copy to .env and fill in
+│   ├── standup.json      Criado em tempo de execução — respostas armazenadas aqui
+│   ├── schedule.json     Horário configurado (criado ao usar !set-time ou !set-deadline)
+│   └── format.json       Formato do ClickUp (criado ao usar !set-format)
+├── config.js             Carrega variáveis de ambiente em BOT_CONFIG / CLICKUP_CONFIG
+├── .env.example          Template — copie para .env e preencha
 └── package.json
 ```
 
 ---
 
-## Storage schema
+## Schema de armazenamento
 
-`data/standup.json` is keyed by date, then by user ID:
+`data/standup.json` é indexado por data e depois por ID de usuário:
 
 ```json
 {
   "2024-01-15": {
     "123456789": {
       "userId": "123456789",
-      "username": "john",
-      "displayName": "John Doe",
+      "username": "joao",
+      "displayName": "João Silva",
       "date": "2024-01-15",
       "state": "complete",
       "yesterday": "Finalizei o módulo de pagamento",
@@ -51,49 +57,50 @@ discord-standup-bot/
 }
 ```
 
-**State machine:**
+**Máquina de estados:**
 `sent` → `answered_yesterday` → `answered_today` → `complete`
 
 ---
 
-## Setup
+## Configuração
 
-### 1. Create the Discord bot
+### 1. Criar o bot no Discord
 
-1. Go to <https://discord.com/developers/applications> and click **New Application**.
-2. Open the **Bot** tab → click **Add Bot**.
-3. Copy the **Token** → this becomes `DISCORD_TOKEN`.
-4. Scroll down to **Privileged Gateway Intents** and enable:
-   - **Server Members Intent** (needed to fetch role members)
-   - **Message Content Intent** (needed to read DM text)
-5. Go to **OAuth2 → URL Generator**, select scopes:
-   - `bot` with permissions: **Send Messages**, **Read Message History**, **Use Slash Commands**
-6. Open the generated URL and invite the bot to your server.
+1. Acesse <https://discord.com/developers/applications> e clique em **New Application**.
+2. Abra a aba **Bot** → clique em **Add Bot**.
+3. Copie o **Token** → será o valor de `DISCORD_TOKEN`.
+4. Role até **Privileged Gateway Intents** e ative:
+   - **Server Members Intent** (necessário para buscar membros do cargo)
+   - **Message Content Intent** (necessário para ler o texto das DMs)
+5. Vá em **OAuth2 → URL Generator**, selecione os escopos:
+   - `bot` com as permissões: **Send Messages**, **Read Message History**, **Use Slash Commands**
+6. Abra a URL gerada e convide o bot para o seu servidor.
 
-### 2. Gather IDs
+### 2. Obter os IDs necessários
 
-Enable **Developer Mode** in Discord (User Settings → Advanced → Developer Mode), then:
+Ative o **Modo Desenvolvedor** no Discord (Configurações → Avançado → Modo Desenvolvedor) e então:
 
-| Value | How to get |
+| Valor | Como obter |
 |---|---|
-| `DISCORD_GUILD_ID` | Right-click your server icon → Copy Server ID |
-| `DISCORD_ROLE_ID` | Server Settings → Roles → right-click @dev-team → Copy Role ID |
-| `DISCORD_OWNER_ID` | Right-click your own name → Copy User ID |
+| `DISCORD_GUILD_ID` | Clique com botão direito no ícone do servidor → Copiar ID do servidor |
+| `DISCORD_ROLE_ID` | Configurações do servidor → Cargos → botão direito no cargo → Copiar ID do cargo |
+| `DISCORD_OWNER_ID` | Clique com botão direito no seu nome → Copiar ID do usuário |
 
-### 3. Configure ClickUp
+### 3. Configurar o ClickUp
 
-1. In ClickUp: click your **avatar** → **Settings** → **Apps** → **API Token** → copy it.
-2. Open the task where you want stand-up comments posted.
-   The URL looks like `app.clickup.com/t/{TASK_ID}` — copy the task ID.
+1. No ClickUp: clique no seu **avatar** → **Configurações** → **Apps** → **API Token** → copie o token.
+2. Abra o documento onde deseja que as páginas de daily sejam criadas.
+   - A URL do workspace aparece como `app.clickup.com/{WORKSPACE_ID}/...` — copie o ID do workspace.
+   - Abra o documento e copie o ID do doc da URL: `app.clickup.com/{ws}/docs/{DOC_ID}-...`
 
-### 4. Create `.env`
+### 4. Criar o `.env`
 
 ```bash
 cp .env.example .env
-# then edit .env with your real values
+# edite o .env com seus valores reais
 ```
 
-### 5. Install and run
+### 5. Instalar e executar
 
 ```bash
 npm install
@@ -102,53 +109,79 @@ npm start
 
 ---
 
-## Commands (send in any guild channel)
+## Comandos (envie em qualquer canal do servidor)
 
-Only the user whose ID matches `DISCORD_OWNER_ID` can use these.
+Apenas o usuário cujo ID corresponde a `DISCORD_OWNER_ID` pode usar estes comandos.
 
-| Command | Description |
+### Stand-up
+
+| Comando | Descrição |
 |---|---|
-| `!start-standup` | Manually trigger the stand-up DMs |
-| `!show-answers [YYYY-MM-DD]` | Display all answers for a day |
-| `!missing [YYYY-MM-DD]` | List users who haven't answered |
-| `!post-clickup [YYYY-MM-DD]` | Manually ship answers to ClickUp |
-| `!help` | Show the command list |
+| `!start-standup` | Dispara as DMs de stand-up manualmente |
+| `!show-answers [YYYY-MM-DD]` | Exibe todas as respostas do dia |
+| `!missing [YYYY-MM-DD]` | Lista quem ainda não respondeu |
+| `!post-clickup [YYYY-MM-DD]` | Envia as respostas ao ClickUp manualmente |
+| `!help` | Exibe a lista de comandos |
 
-Date defaults to today if omitted.
+A data padrão é hoje quando omitida.
 
-## User DM commands
+### Configuração de horário
 
-Any stand-up participant can type these in the bot's DM:
-
-| Command | Description |
+| Comando | Descrição |
 |---|---|
-| `!restart` | Clear today's answers and start over (valid before the deadline) |
+| `!set-time HH:MM` | Define o horário do disparo automático da daily (seg–sex) |
+| `!set-deadline N` | Define quantos minutos após o stand-up o ClickUp é atualizado automaticamente |
+| `!show-config` | Exibe a configuração atual de horários |
+
+Os horários são salvos em `data/schedule.json` e persistem após reinicializações do bot.
+
+### Formato do ClickUp
+
+| Comando | Descrição |
+|---|---|
+| `!set-format language pt\|en` | Idioma das seções (Português ou English) |
+| `!set-format legend on\|off` | Ativa/desativa a legenda de emojis no rodapé |
+| `!set-format header on\|off` | Ativa/desativa o cabeçalho automático |
+| `!set-format title <prefixo>` | Define o prefixo do título da página (ex: `Daily`) |
+| `!show-format` | Exibe as configurações atuais de formato |
+| `!preview-format` | Mostra uma pré-visualização do markdown que será enviado |
+
+As configurações de formato são salvas em `data/format.json`.
+
+## Comandos de DM (participantes)
+
+Qualquer participante da daily pode digitar estes comandos na DM com o bot:
+
+| Comando | Descrição |
+|---|---|
+| `!restart` | Apaga as respostas de hoje e recomeça (válido antes do prazo) |
 
 ---
 
-## Schedule configuration
+## Configuração de horário (via variáveis de ambiente)
 
-`STANDUP_TIME` uses standard cron syntax: `MINUTE HOUR * * DAYS`
+`STANDUP_TIME` usa sintaxe cron padrão: `MINUTO HORA * * DIAS`
 
 ```
-30 9 * * 1-5   →  9:30 AM, Monday–Friday  (default)
-0 10 * * 1-5   →  10:00 AM, Monday–Friday
-0 9 * * *      →  9:00 AM, every day
+30 9 * * 1-5   →  09h30, segunda a sexta  (padrão)
+0 10 * * 1-5   →  10h00, segunda a sexta
+0 9 * * *      →  09h00, todos os dias
 ```
 
-The deadline fires `DEADLINE_MINUTES` after `STANDUP_TIME`. Default: 30 min → closes at 10:00 AM.
+O prazo dispara `DEADLINE_MINUTES` após `STANDUP_TIME`. Padrão: 30 min → encerra às 10h00.
+
+Você também pode alterar o horário sem reiniciar o bot usando `!set-time` e `!set-deadline`.
 
 ---
 
-## ClickUp comment format
+## Formato da página no ClickUp
 
 ```
-# Daily Stand-up — 2024-01-15
-
-## 👤 John Doe (@john)
+> Gerado automaticamente pelo bot de stand-up.
 
 ---
-Atualizações para: 2024-01-15
+
+## 👤 João Silva (@joao)
 
 Ontem eu fiz:
 
@@ -168,64 +201,66 @@ Nenhum.
 [✅=Feito][🟨=Fazendo][🟫=Não trabalhado]
 ```
 
-**Tip:** Users can prefix task lines with `✅`, `🟨`, or `🟫` in their DM answers and the bot will preserve them in the ClickUp comment.
+**Dica:** Os usuários podem prefixar linhas de tarefas com `✅`, `🟨` ou `🟫` nas respostas por DM e o bot preservará esses emojis na página do ClickUp.
+
+O formato é configurável via comandos `!set-format` sem precisar reiniciar o bot.
 
 ---
 
-## Deployment
+## Deploy
 
-### Option A — VPS with PM2 (recommended)
+### Opção A — VPS com PM2 (recomendado)
 
 ```bash
-# On your server
+# No seu servidor
 npm install -g pm2
-git clone <your-repo> discord-standup-bot
+git clone <seu-repositorio> discord-standup-bot
 cd discord-standup-bot
-cp .env.example .env && nano .env   # fill in values
+cp .env.example .env && nano .env   # preencha os valores
 npm install
 pm2 start src/index.js --name standup-bot
 pm2 save
-pm2 startup   # follow the printed command to auto-start on reboot
+pm2 startup   # siga o comando exibido para auto-iniciar no boot
 ```
 
-### Option B — Render (free tier)
+### Opção B — Render (plano gratuito)
 
-1. Push the project to a GitHub repo (make sure `.env` is in `.gitignore`).
-2. Create a new **Web Service** on <https://render.com>.
-3. Build command: `npm install`
-4. Start command: `npm start`
-5. Add all env vars in **Environment → Add Environment Variable**.
+1. Faça push do projeto para um repositório GitHub (certifique-se de que `.env` está no `.gitignore`).
+2. Crie um novo **Web Service** em <https://render.com>.
+3. Comando de build: `npm install`
+4. Comando de start: `npm start`
+5. Adicione todas as variáveis de ambiente em **Environment → Add Environment Variable**.
 
-> Render free tier spins down after inactivity. Use the paid tier or a VPS for a bot that needs to be always-on.
+> O plano gratuito do Render desliga o serviço após inatividade. Use o plano pago ou uma VPS para um bot que precisa ficar sempre ativo.
 
 ---
 
-## Local testing
+## Testes locais
 
 ```bash
-# 1. Set STANDUP_TIME to 2 minutes from now so you don't wait
-#    e.g. if it's 14:23, set:  STANDUP_TIME=25 14 * * *
-#    and:                       DEADLINE_MINUTES=2
+# 1. Defina STANDUP_TIME para 2 minutos a partir de agora
+#    ex: se forem 14h23, defina:  STANDUP_TIME=25 14 * * *
+#    e:                            DEADLINE_MINUTES=2
 
-# 2. Start the bot
+# 2. Inicie o bot
 npm start
 
-# 3. In Discord, send to a guild channel (as the owner):
+# 3. No Discord, envie em um canal do servidor (como dono):
 !start-standup
 
-# 4. The bot will DM every @dev-team member. Reply to the 3 questions.
+# 4. O bot enviará DM para cada membro com o cargo configurado. Responda as 3 perguntas.
 
-# 5. Check collected answers:
+# 5. Verifique as respostas coletadas:
 !show-answers
 
-# 6. Manually push to ClickUp (or wait for the deadline cron):
+# 6. Envie manualmente ao ClickUp (ou aguarde o cron do prazo):
 !post-clickup
 ```
 
 ---
 
-## Extending
+## Extensões possíveis
 
-- **SQLite storage:** replace `src/storage.js` with `better-sqlite3` queries using the same interface (`getEntry`, `setEntry`, `getDayEntries`).
-- **Per-user deadline DM reminders:** add a cron halfway between `standupTime` and `deadlineCron` that calls `missingUsersReport` and DMs stragglers.
-- **Multi-server support:** parameterise `guildId` / `roleId` per server in a config map.
+- **Armazenamento com SQLite:** substitua `src/storage.js` por queries com `better-sqlite3` mantendo a mesma interface (`getEntry`, `setEntry`, `getDayEntries`).
+- **Lembrete para quem não respondeu:** adicione um cron na metade do tempo entre `standupTime` e `deadlineCron` que chame `missingUsersReport` e envie DMs de lembrete.
+- **Suporte a múltiplos servidores:** parametrize `guildId` / `roleId` por servidor em um mapa de configuração.
