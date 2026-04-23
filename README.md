@@ -223,15 +223,11 @@ pm2 save
 pm2 startup   # siga o comando exibido para auto-iniciar no boot
 ```
 
-### Opção B — Render (plano gratuito)
+### Opção B — Railway (plano gratuito)
 
-1. Faça push do projeto para um repositório GitHub (certifique-se de que `.env` está no `.gitignore`).
-2. Crie um novo **Web Service** em <https://render.com>.
-3. Comando de build: `npm install`
-4. Comando de start: `npm start`
-5. Adicione todas as variáveis de ambiente em **Environment → Add Environment Variable**.
-
-> O plano gratuito do Render desliga o serviço após inatividade. Use o plano pago ou uma VPS para um bot que precisa ficar sempre ativo.
+1. Faça fork do repositório GitHub.
+2. Crie um novo **Projeto** no railway usando o repositório como fonte.
+5. Adicione todas as variáveis de ambiente em **Variables → New Variable**.
 
 ---
 
